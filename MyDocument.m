@@ -203,7 +203,53 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
     return ret;
 }
 
-- (BOOL)readFromData:(NSData *)data
+- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName error:(NSError **)outError
+{
+    NSLog(@"Opened document: %@", absoluteURL);
+    [[NSDocumentController sharedDocumentController] noteNewRecentDocumentURL:absoluteURL];
+    
+    NSData *data = [NSData dataWithContentsOfURL: absoluteURL];
+    DLog(@"readFromData:0x%08x ofType:%@\n", (unsigned)data, typeName);
+    if ([typeName isEqualToString:@"PDF Document"]) {
+        _originalPDFData = [data retain];
+        [self setFileURL:nil];  // causes document to be "untitled" and otherwise
+        // act like a brand new document. e.g. file->save
+        // pops the save-as dialog
+    } else if ([typeName isEqualToString:@"FormulatePro Document"]) {
+        NSMutableDictionary *dict =
+        [NSPropertyListSerialization
+         propertyListFromData:data
+         mutabilityOption:NSPropertyListMutableContainersAndLeaves
+         format:nil
+         errorDescription:nil];
+        assert(nil != dict);
+        // TODO(adlr): check for error, version, convert these keys to
+        // constants
+        _originalPDFData = [[dict objectForKey:@"originalPDFData"] retain];
+        _tempOverlayGraphics = [[dict objectForKey:@"archivalOverlayGraphics"]
+                                retain];
+        _tempOverlayGraphicsVersion = [[dict objectForKey:@"version"] intValue];
+        if ([FPArchivalDictionaryUpgrader currentVersion] < _tempOverlayGraphicsVersion) {
+            *outError = [NSError errorWithDomain:@"info.adlr.FormulatePro.ErrorDomain"
+                                            code:1
+                                        userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+                                                  @"Bad Version.",NSLocalizedDescriptionKey,
+                                                  @"The file was created with a newer version of "
+                                                  @"FormulatePro.",NSLocalizedFailureReasonErrorKey,
+                                                  nil]];
+            return NO;
+        }
+    }
+    _pdf_document = [[PDFDocument alloc] initWithData:_originalPDFData];
+    if (nil == _pdf_document) {
+        // report error
+        DLog(@"error with PDF format!\n");
+        return NO;
+    }
+    return YES;
+}
+
+/*- (BOOL)readFromData:(NSData *)data
               ofType:(NSString *)typeName
                error:(NSError **)outError
 {
@@ -245,7 +291,7 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
         return NO;
     }
     return YES;
-}
+}*/
 
 - (IBAction)zoomIn:(id)sender
 {
@@ -589,7 +635,7 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
 // -printShowingPrintPanel: instead.
 - (NSPrintOperation *)printOperationWithSettings:(NSDictionary *)printSettings
                                            error:(NSError **)outError {
-    DLog(@"print operations\n");
+    NSLog(@"print operations\n");
     // Create a view that will be used just for printing.
     //NSSize documentSize = [self documentSize];
     //SKTRenderingView *renderingView = [[SKTRenderingView alloc]
@@ -597,6 +643,8 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
     //                             documentSize.height)
     //         graphics:[self graphics]];
     FPDocumentView *printView = [_document_view printableCopy];
+    
+    
     
     // Create a print operation.
     NSPrintOperation *printOperation =
@@ -614,18 +662,15 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
     // mutating the result of [self printInfo] here, and using the result of
     // [printOperation printInfo], a copy of the original print info, means we
     // don't have to make yet another temporary copy of [self printInfo].
-    [[[printOperation printInfo] dictionary]
-        addEntriesFromDictionary:printSettings];
+    [[[printOperation printInfo] dictionary] addEntriesFromDictionary:printSettings];
     //[[[printOperation printInfo] dictionary]
     //    setValue:[NSNumber numberWithInt:[_pdf_document pageCount]]
     //      forKey:@"NSPagesAcross"];
-    [[[printOperation printInfo] dictionary]
-        setValue:[NSNumber numberWithInt:[_pdf_document pageCount]]
-          forKey:@"NSLastPage"];
+    [[[printOperation printInfo] dictionary] setValue:[NSNumber numberWithInt:[_pdf_document pageCount]] forKey:@"NSLastPage"];
     
     // add option for (not) printing original PDF
     // this uses deprecated method b/c the replacement method is 10.5 only
-    [printOperation setAccessoryView:_print_accessory_view];
+    //[printOperation setAccessoryView:_print_accessory_view];
     
     // We don't have to autorelease the print operation because
     // +[NSPrintOperation printOperationWithView:printInfo:] of course already
@@ -644,6 +689,54 @@ static NSString *MyDocToolbarIdentifierPreviousPage =
 - (BOOL)drawsOriginalPDF
 {
     return [_print_original_pdf boolValue];
+}
+
+- (void)refreshPrefs{
+    //[_document_view initMemberVariables];
+    [_document_view refreshPrefs]; 
+}
+
+- (IBAction) printDirectlyToPDF: (id)sender{
+    NSPrintInfo *printInfo;
+	NSPrintInfo *sharedInfo;
+	NSPrintOperation *printOp;
+	NSMutableDictionary *printInfoDict;
+	NSMutableDictionary *sharedDict;
+    
+    // Create the File Open Dialog class.
+    NSSavePanel* saveDlg = [NSSavePanel savePanel];
+    
+    // Display the dialog.  If the OK button was pressed,
+    // process the files.
+    if ( [saveDlg runModalForDirectory:nil file:nil] == NSOKButton )
+    {
+        // Get an array containing the full filenames of all
+        // files and directories selected.
+        //NSArray* files = [saveDlg filenames];
+        NSString* fileName = [[saveDlg URL] path];
+        if (![[fileName uppercaseString] hasSuffix: @".PDF"]){
+            fileName = [fileName stringByAppendingPathExtension: @"PDF"];
+        }
+        sharedInfo = [self printInfo]; //[NSPrintInfo sharedPrintInfo];
+        sharedDict = [sharedInfo dictionary];
+        printInfoDict = [NSMutableDictionary dictionaryWithDictionary: sharedDict];
+        
+        
+        [printInfoDict setObject:NSPrintSaveJob forKey:NSPrintJobDisposition];
+        [printInfoDict setObject: fileName forKey:NSPrintSavePath];
+        
+        printInfo = [[NSPrintInfo alloc] initWithDictionary: printInfoDict];
+        //[printInfo setHorizontalPagination: NSAutoPagination];
+        //[printInfo setVerticalPagination: NSAutoPagination];
+        //[printInfo setVerticallyCentered:NO];
+        
+        printOp = [NSPrintOperation printOperationWithView: [_document_view printableCopy] printInfo:printInfo];
+        [printOp setShowsPrintPanel: NO];
+        [printOp runOperation]; 
+        
+    }    
+	
+ 
 }
 
 @end

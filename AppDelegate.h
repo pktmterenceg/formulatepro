@@ -16,4 +16,10 @@
 - (IBAction)viewBugList:(id)sender;
 - (IBAction)fileNewBug:(id)sender;
 
+
+- (IBAction)refreshAllDocumentViews:(id)sender;
+
+- (IBAction)saveFrontmostDocumentToPDF:(id)sender;
+- (NSInteger) documentCount;
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
 @end

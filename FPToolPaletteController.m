@@ -56,6 +56,10 @@ static FPToolPaletteController *_sharedController;
     [[NSNotificationCenter defaultCenter]
         addObserver:self selector:@selector(endQuickMove:)
         name:FPEndQuickMove object:nil];
+    NSPoint pos;
+    pos.x = 75;
+    pos.y = 971;
+    [[self window] setFrameOrigin:pos];
 }
 
 + (FPToolPaletteController *)sharedToolPaletteController

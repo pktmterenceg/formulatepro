@@ -8,19 +8,16 @@
 
 #import "FPTipsController.h"
 #import "FPLogging.h"
+#import "SharedConstants.h" //shared constants moved to sep .h file
 
-static NSString *kFPShowTipsAtStartup = @"FPShowTipsAtStartup";
-static NSString *kFPNextToolTip = @"FPNextToolTip";
+
 
 @implementation FPTipsController
 
 + (void)initialize
 {
-    NSDictionary *defaults = [NSDictionary dictionaryWithObjectsAndKeys:
-        [NSNumber numberWithBool:YES],kFPShowTipsAtStartup,
-        [NSNumber numberWithUnsignedInt:0],kFPNextToolTip,
-        nil,nil];
-    [[NSUserDefaultsController sharedUserDefaultsController] setInitialValues:defaults];
+	//First-time prefs initialization moved to app delegate where it makes more sense.
+    
 }
 
 - (unsigned int)getNextTipIndexFromDefaults
@@ -31,15 +28,15 @@ static NSString *kFPNextToolTip = @"FPNextToolTip";
 
 - (void)setNextTipIndexToDefaults:(unsigned int)nextTip;
 {
-//    NSDictionary *defaults = [NSDictionary dictionaryWithObjectsAndKeys:
-//        [NSNumber numberWithUnsignedInt:nextTip],kFPNextToolTip,
-//        nil,nil];
+    //    NSDictionary *defaults = [NSDictionary dictionaryWithObjectsAndKeys:
+    //        [NSNumber numberWithUnsignedInt:nextTip],kFPNextToolTip,
+    //        nil,nil];
     id values = [[NSUserDefaultsController sharedUserDefaultsController] values];
     [values setValue:[NSNumber numberWithUnsignedInt:nextTip] forKey:kFPNextToolTip];
-//    [[NSUserDefaultsController sharedUserDefaultsController] setInitialValues:defaults];
-//    DLog(@"about to save\n");
-//    [(NSUserDefaultsController*)[NSUserDefaultsController sharedUserDefaultsController] save:self];
-//    DLog(@"saved\n");
+    //    [[NSUserDefaultsController sharedUserDefaultsController] setInitialValues:defaults];
+    //    DLog(@"about to save\n");
+    //    [(NSUserDefaultsController*)[NSUserDefaultsController sharedUserDefaultsController] save:self];
+    //    DLog(@"saved\n");
 }
 
 - (void)displayTip:(unsigned int)tip
@@ -68,9 +65,9 @@ static NSString *kFPNextToolTip = @"FPNextToolTip";
         return;
     }
     _tips = [NSPropertyListSerialization propertyListFromData:data
-                                            mutabilityOption:NSPropertyListImmutable
-                                                      format:nil
-                                            errorDescription:nil];
+                                             mutabilityOption:NSPropertyListImmutable
+                                                       format:nil
+                                             errorDescription:nil];
     [_tips retain];
     _tipOnDisplay = [self getNextTipIndexFromDefaults];
     [self displayTip:_tipOnDisplay];
@@ -98,9 +95,35 @@ static NSString *kFPNextToolTip = @"FPNextToolTip";
 
 - (IBAction)showExportAsPDFTip:(id)sender
 {
-    [self displayTip:2];
-    [_tipWindow center];
-    [_tipWindow makeKeyAndOrderFront:self];
+    /*[self displayTip:2];
+     [_tipWindow center];
+     [_tipWindow makeKeyAndOrderFront:self];*/
+	/*NSPrintInfo *printInfo;
+	NSPrintInfo *sharedInfo;
+	NSPrintOperation *printOp;
+	NSMutableDictionary *printInfoDict;
+	NSMutableDictionary *sharedDict;
+	
+	sharedInfo = [NSPrintInfo sharedPrintInfo];
+	sharedDict = [sharedInfo dictionary];
+	printInfoDict = [NSMutableDictionary dictionaryWithDictionary:
+					 sharedDict];
+    
+    
+	[printInfoDict setObject:NSPrintSaveJob 
+                      forKey:NSPrintJobDisposition];
+	[printInfoDict setObject:[sheet filename] forKey:NSPrintSavePath];
+	
+	printInfo = [[NSPrintInfo alloc] initWithDictionary: printInfoDict];
+	[printInfo setHorizontalPagination: NSAutoPagination];
+	[printInfo setVerticalPagination: NSAutoPagination];
+	[printInfo setVerticallyCentered:NO];
+	
+	printOp = [NSPrintOperation printOperationWithView:textView 
+                                             printInfo:printInfo];
+	[printOp setShowPanels:NO];
+	[printOp runOperation];*/
+    
 }
 
 - (void)windowWillClose:(NSNotification *)aNotification

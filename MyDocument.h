@@ -10,7 +10,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Quartz/Quartz.h>
 #import <PDFKit/PDFDocument.h>
-
+#import <AppKit/NSToolbar.h>
 #import "FPDocumentView.h"
 
 @interface MyDocument : NSDocument
@@ -37,4 +37,9 @@
 - (IBAction)placeImage:(id)sender;
 
 - (BOOL)drawsOriginalPDF;
+
+- (void)refreshPrefs;
+
+- (IBAction) printDirectlyToPDF: (id)sender;
+
 @end

@@ -6,6 +6,7 @@
 #import "FPImage.h"
 #import "FPLogging.h"
 #import "MyDocument.h"
+#import "SharedConstants.h"
 
 @implementation FPDocumentView
 
@@ -62,6 +63,7 @@ static const float ZoomScaleFactor = 1.3;
     ret->_draws_shadow = NO;
     ret->_inQuickMove = NO;
     ret->_is_printing = YES;
+	ret->_has_gridOverlay = NO; //regardless of the app-wide preference, the printable view _definitely_ doesn't get the grid overlay
     ret->_overlayGraphics = [_overlayGraphics retain];
     ret->_selectedGraphics = [[NSMutableSet alloc] initWithCapacity:0];
     if (_editingGraphic) {
@@ -69,7 +71,7 @@ static const float ZoomScaleFactor = 1.3;
         _editingGraphic = nil;
     }
     ret->_editingGraphic = nil;
-    ret->_doc = _doc;
+    ret->_doc = _doc;	
     [ret setPDFDocument:_pdf_document];
     return ret;
 }
@@ -84,7 +86,12 @@ static const float ZoomScaleFactor = 1.3;
     _draws_shadow = YES;
     _inQuickMove = NO;
     _is_printing = NO;
-
+	
+	//pull grid overlay value from prefs.
+	id values = [[NSUserDefaultsController sharedUserDefaultsController] values];
+    _has_gridOverlay = [[values valueForKey:kFPShowGridOverlay] boolValue];
+    
+	
     _overlayGraphics = [[NSMutableArray alloc] initWithCapacity:1];
     _selectedGraphics = [[NSMutableSet alloc] initWithCapacity:1];
     _editingGraphic = nil;
@@ -118,35 +125,35 @@ static const float ZoomScaleFactor = 1.3;
 {
     [self initMemberVariables];
     [[NSNotificationCenter defaultCenter]
-        addObserver:self selector:@selector(beginQuickMove:)
-        name:FPBeginQuickMove object:nil];
+     addObserver:self selector:@selector(beginQuickMove:)
+     name:FPBeginQuickMove object:nil];
     [[NSNotificationCenter defaultCenter]
-        addObserver:self selector:@selector(abortQuickMove:)
-        name:FPAbortQuickMove object:nil];
+     addObserver:self selector:@selector(abortQuickMove:)
+     name:FPAbortQuickMove object:nil];
     [[NSNotificationCenter defaultCenter]
-        addObserver:self selector:@selector(endQuickMove:)
-        name:FPEndQuickMove object:nil];
+     addObserver:self selector:@selector(endQuickMove:)
+     name:FPEndQuickMove object:nil];
     [[NSNotificationCenter defaultCenter]
-        addObserver:self selector:@selector(toolChosen:)
-               name:FPToolChosen object:nil];
+     addObserver:self selector:@selector(toolChosen:)
+     name:FPToolChosen object:nil];
     
     [[self superview] setPostsBoundsChangedNotifications:YES];
     [[self superview] setPostsFrameChangedNotifications:YES];
     [[NSNotificationCenter defaultCenter]
-       addObserver:self
-          selector:@selector(viewingRectChanged:)
-              name:NSViewBoundsDidChangeNotification
-            object:[self superview]];
+     addObserver:self
+     selector:@selector(viewingRectChanged:)
+     name:NSViewBoundsDidChangeNotification
+     object:[self superview]];
     [[NSNotificationCenter defaultCenter]
-       addObserver:self
-          selector:@selector(viewingRectChanged:)
-              name:NSViewFrameDidChangeNotification
-            object:[self superview]];
+     addObserver:self
+     selector:@selector(viewingRectChanged:)
+     name:NSViewFrameDidChangeNotification
+     object:[self superview]];
     [[NSNotificationCenter defaultCenter]
-       addObserver:self
-          selector:@selector(windowWillClose:)
-              name:NSWindowWillCloseNotification
-            object:[self window]];
+     addObserver:self
+     selector:@selector(windowWillClose:)
+     name:NSWindowWillCloseNotification
+     object:[self window]];
 }
 
 - (void)setPDFDocument:(PDFDocument *)pdf_document
@@ -178,7 +185,7 @@ static const float ZoomScaleFactor = 1.3;
     NSPoint viewOrigin = NSMakePoint(floorf(viewPoint.x - viewWidth/2.0),
                                      floorf(viewPoint.y - viewHeight/2.0));
     [[_scrollView contentView] scrollToPoint:
-        [[_scrollView contentView] constrainScrollPoint:viewOrigin]];
+     [[_scrollView contentView] constrainScrollPoint:viewOrigin]];
     [_scrollView reflectScrolledClipView:[_scrollView contentView]];
 }
 
@@ -188,11 +195,11 @@ static const float ZoomScaleFactor = 1.3;
     unsigned int page;
     DLog(@"old frame: %@\n", NSStringFromRect([self frame]));
     [self getViewingMidpointToPage:&page pagePoint:&pagePoint];
-
+    
     _scale_factor *= ZoomScaleFactor;
     [self setFrame:[self frame]];
     [self setNeedsDisplay:YES];
-
+    
     [self scrollToMidpointOnPage:page point:pagePoint];
     
     // tell an editing graphic (which may have a view), that doc zoomed
@@ -213,7 +220,7 @@ static const float ZoomScaleFactor = 1.3;
     [self setNeedsDisplay:YES];
     
     [self scrollToMidpointOnPage:page point:pagePoint];
-
+    
     // tell an editing graphic (which may have a view), that doc zoomed
     DLog(@"new frame: %@\n", NSStringFromRect([self frame]));
     if (_editingGraphic)
@@ -272,7 +279,7 @@ static const float ZoomScaleFactor = 1.3;
 {
     NSGraphicsContext* theContext = [NSGraphicsContext currentContext];
     //DLog(@"draw rect %@\n", NSStringFromRect(rect));
-
+    
     if (nil == _pdf_document) return;
     
     // draw the shadow and white page backgrounds, and pdf pages
@@ -300,10 +307,10 @@ static const float ZoomScaleFactor = 1.3;
         
         NSAffineTransform *at = [self transformForPage:i];
         [at concat];
-
+        
         if (!_is_printing || [_doc drawsOriginalPDF])
             [[_pdf_document pageAtIndex:i] drawWithBox:_box];
-
+        
         for (unsigned int j = 0; j < [_overlayGraphics count]; j++) {
             FPGraphic *g;
             g = [_overlayGraphics objectAtIndex:j];
@@ -318,13 +325,57 @@ static const float ZoomScaleFactor = 1.3;
                 [_selectedGraphics containsObject:g])
                 [g drawKnobs];
         }
-
+		
+		///////////////////////////////
+		// Grid-drawing code here.
+        ///////////////////////////////
+		if (_has_gridOverlay){
+			int width = page_rect.size.width ;
+			int height = page_rect.size.height ;
+			
+			int i = 0 ;
+			
+			
+			// Set the color in the current graphics context for future draw operations
+			[[NSColor lightGrayColor] setStroke];
+			
+			// Create our drawing path
+			
+			NSBezierPath* drawingPath = [NSBezierPath bezierPath];
+			// Set the line dash pattern.
+			float lineDash[2];
+			
+			lineDash[0] = 1.0;
+			lineDash[1] = 1.5;
+            
+			
+			[drawingPath setLineDash:lineDash count:2 phase:0.0];
+			
+			// Draw a grid
+			// first the vertical lines
+			for( i = 0 ; i <= width ; i=i+GRIDSIZE ) { 
+				[drawingPath moveToPoint:NSMakePoint(i, 0)]; 
+				[drawingPath lineToPoint:NSMakePoint(i, height)]; 
+			} // then the horizontal lines
+			for( i = 0 ; i <= height ; i=i+GRIDSIZE ) { 
+				[drawingPath moveToPoint:NSMakePoint(0,i)]; 
+				[drawingPath lineToPoint:NSMakePoint(width, i)]; 
+			} // actually draw the grid
+			[drawingPath stroke];
+		}
+		///////////////////////////////
+		
+        
         [at invert];
         [at concat];
         [NSGraphicsContext restoreGraphicsState]; // undo page clipping rect
-      loop_end:
+    loop_end:
         how_far_down += NSHeight(page_rect) + PageBorderSize;
     }
+    
+	
+	
+    
 }
 
 - (unsigned int)pageForPointFromEvent:(NSEvent *)theEvent
@@ -333,8 +384,8 @@ static const float ZoomScaleFactor = 1.3;
     loc_in_window.x += 0.5;
     loc_in_window.y -= 0.5; // correct for coordinates being between pixels
     NSPoint loc_in_view =
-        [[[self window] contentView] convertPoint:loc_in_window toView:self];
-
+    [[[self window] contentView] convertPoint:loc_in_window toView:self];
+    
     return [self pageForPoint:loc_in_view];
 }
 
@@ -357,7 +408,7 @@ static const float ZoomScaleFactor = 1.3;
 {
     assert(_pdf_document);
     assert(page < [_pdf_document pageCount]);
-
+    
     NSAffineTransform *at = [NSAffineTransform transform];
     [at scaleXBy:1.0 yBy:-1.0];
     float yTranslate = 0.0;
@@ -425,7 +476,7 @@ static const float ZoomScaleFactor = 1.3;
     loc_in_window.x += 0.5;
     loc_in_window.y -= 0.5; // correct for coordinates being between pixels
     NSPoint loc_in_view =
-        [[[self window] contentView] convertPoint:loc_in_window toView:self];
+    [[[self window] contentView] convertPoint:loc_in_window toView:self];
     NSPoint loc_in_page = [self convertPoint:loc_in_view toPage:page];
 	DLog(@"W: %@, V: %@, :P %@\n", NSStringFromPoint(loc_in_window), NSStringFromPoint(loc_in_view), NSStringFromPoint(loc_in_page));
     return loc_in_page;
@@ -453,8 +504,8 @@ static const float ZoomScaleFactor = 1.3;
     for (;;) {
         // get ready for next iteration of the loop, or break out of loop
         theEvent =
-            [[self window] nextEventMatchingMask:(NSLeftMouseDraggedMask |
-                                                  NSLeftMouseUpMask)];
+        [[self window] nextEventMatchingMask:(NSLeftMouseDraggedMask |
+                                              NSLeftMouseUpMask)];
         if ([theEvent type] == NSLeftMouseUp)
             break;
         
@@ -464,10 +515,10 @@ static const float ZoomScaleFactor = 1.3;
             for (i = 0; i < [selectedGraphics count]; i++) {
                 FPGraphic *g = [selectedGraphics objectAtIndex:i];
                 [self setNeedsDisplayInRect:
-                    [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
+                 [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
                 [g reassignToPage:newPage];
                 [self setNeedsDisplayInRect:
-                    [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
+                 [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
             }
             // reassign oldPoint to the newPage
             oldPoint = [self convertPoint:[self convertPoint:oldPoint
@@ -475,7 +526,7 @@ static const float ZoomScaleFactor = 1.3;
                                    toPage:newPage];
             oldPage = newPage;
         }
-
+        
         newPoint = [self pagePointForPointFromEvent:theEvent
                                                page:oldPage];
         
@@ -486,10 +537,10 @@ static const float ZoomScaleFactor = 1.3;
         for (i = 0; i < [selectedGraphics count]; i++) {
             FPGraphic *g = [selectedGraphics objectAtIndex:i];
             [self setNeedsDisplayInRect:
-                [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
+             [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
             [g moveGraphicByX:deltaX byY:deltaY];
             [self setNeedsDisplayInRect:
-                [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
+             [self convertRect:[g boundsWithKnobs] fromPage:[g page]]];
         }
         
         oldPoint = newPoint;
@@ -525,12 +576,12 @@ static const float ZoomScaleFactor = 1.3;
     }
     
     unsigned int tool =
-        [[FPToolPaletteController sharedToolPaletteController] currentTool];
-
+    [[FPToolPaletteController sharedToolPaletteController] currentTool];
+    
     unsigned int page = [self pageForPointFromEvent:theEvent];
     NSPoint pagePoint =
-        [self pagePointForPointFromEvent:theEvent page:page];
-        
+    [self pagePointForPointFromEvent:theEvent page:page];
+    
     if (_inQuickMove) {
         assert(1 == [_selectedGraphics count]);
         // see if we hit a selected graphic's knob
@@ -544,7 +595,7 @@ static const float ZoomScaleFactor = 1.3;
         // see if we hit the shape
         if ([graphic page] == page) {
             NSPoint pagePoint =
-                [self pagePointForPointFromEvent:theEvent page:page];
+            [self pagePointForPointFromEvent:theEvent page:page];
             if (NSPointInRect(pagePoint, [graphic safeBounds])) {
                 [self moveSelectionWithEvent:theEvent];
                 return;
@@ -553,7 +604,7 @@ static const float ZoomScaleFactor = 1.3;
         // let's get out of quick move mode
         [self sendAbortQuickMove];
     }
-
+    
     if (tool == FPToolArrow) {
         // if we hit a knob, resize that shape by its knob
         if ([_selectedGraphics count]) {
@@ -568,7 +619,7 @@ static const float ZoomScaleFactor = 1.3;
                                                                         object:[self window]
                                                                       userInfo:nil];
                     [self setNeedsDisplay:YES]; // to fix which knobs are
-                                                // showing
+                    // showing
                     [graphic resizeWithEvent:theEvent byKnob:knob];
                     return;
                 }
@@ -663,7 +714,7 @@ static const float ZoomScaleFactor = 1.3;
     // tool is that class, edit that graphic. otherwise make a new graphic
     // and get it up and running.
     Class toolClass = [[FPToolPaletteController sharedToolPaletteController] 
-        classForCurrentTool];
+                       classForCurrentTool];
     int i;
     for (i = [_overlayGraphics count] - 1; i >= 0; i--) {
         FPGraphic *gr = [_overlayGraphics objectAtIndex:i];
@@ -685,8 +736,8 @@ static const float ZoomScaleFactor = 1.3;
     }
     if (i < 0) {  // didn't start editing a graphic
         FPGraphic *graphic =
-            [[[FPToolPaletteController sharedToolPaletteController] 
-                classForCurrentTool] graphicInDocumentView:self];
+        [[[FPToolPaletteController sharedToolPaletteController] 
+          classForCurrentTool] graphicInDocumentView:self];
         assert(graphic);
         [_overlayGraphics addObject:graphic];
         BOOL keep = [graphic placeWithEvent:theEvent];
@@ -741,7 +792,7 @@ static const float ZoomScaleFactor = 1.3;
     if (NO == _inQuickMove) return;
     DLog(@"endQuickMove\n");
     _inQuickMove = NO;
-
+    
     _editingGraphic = [_selectedGraphics anyObject];
     [self setNeedsDisplay:YES];
     [_editingGraphic startEditing];
@@ -776,10 +827,10 @@ static const float ZoomScaleFactor = 1.3;
             contextInfo:(void *)contextInfo
 {
     if (NSOKButton != returnCode) return;
-
+    
     NSImage *image = [[[NSImage alloc]
                        initWithContentsOfFile:[panel filename]] autorelease];
-
+    
     if (nil == image) {
         // failed to open
         // TODO(adlr): notify user that open failed
@@ -787,7 +838,7 @@ static const float ZoomScaleFactor = 1.3;
     }
     FPImage *img = [[FPImage alloc] initInDocumentView:self
                                              withImage:image];
-
+    
     [_overlayGraphics addObject:img];
     [self setNeedsDisplay:YES];
 }
@@ -796,24 +847,24 @@ static const float ZoomScaleFactor = 1.3;
 #pragma mark Color
 
 - (BOOL)handleColorChange:(NSColor*)newColor {
-  DLog(@"change color\n");
-  //setStrokeColor
-  if (_editingGraphic)
+    DLog(@"change color\n");
+    //setStrokeColor
+    if (_editingGraphic)
+        return YES;
+    
+    if (0 == [_selectedGraphics count])
+        return NO;
+    for (int i = 0; i < [_overlayGraphics count]; i++) {
+        FPGraphic *graphic = [_overlayGraphics objectAtIndex:i];
+        if (![_selectedGraphics containsObject:graphic])
+            continue;
+        [graphic setStrokeColor:newColor];
+    }
     return YES;
-
-  if (0 == [_selectedGraphics count])
-    return NO;
-  for (int i = 0; i < [_overlayGraphics count]; i++) {
-    FPGraphic *graphic = [_overlayGraphics objectAtIndex:i];
-    if (![_selectedGraphics containsObject:graphic])
-      continue;
-    [graphic setStrokeColor:newColor];
-  }
-  return YES;
 }
 
 - (NSColor*)defaultStrokeColor {
-  return [(FPDocumentWindow*)[self window] currentColor];
+    return [(FPDocumentWindow*)[self window] currentColor];
 }
 
 #pragma mark -
@@ -881,8 +932,7 @@ static const float ZoomScaleFactor = 1.3;
 {
     NSMutableArray *arr = [NSMutableArray array];
     for (unsigned int i = 0; i < [_overlayGraphics count]; i++) {
-        [arr
-         addObject:[[_overlayGraphics objectAtIndex:i] archivalDictionary]];
+        [arr addObject:[[_overlayGraphics objectAtIndex:i] archivalDictionary]];
     }
     return arr;
 }
@@ -892,9 +942,15 @@ static const float ZoomScaleFactor = 1.3;
     [_overlayGraphics removeAllObjects];
     for (unsigned int i = 0; i < [arr count]; i++) {
         [_overlayGraphics addObject:
-            [FPGraphic graphicFromArchivalDictionary:[arr objectAtIndex:i]
-                                      inDocumentView:self]];
+         [FPGraphic graphicFromArchivalDictionary:[arr objectAtIndex:i]
+                                   inDocumentView:self]];
     }
+}
+
+- (void) refreshPrefs{
+    id values = [[NSUserDefaultsController sharedUserDefaultsController] values];
+    _has_gridOverlay = [[values valueForKey:kFPShowGridOverlay] boolValue];
+    [self setNeedsDisplay: YES];  //if you're changing this for the  document, you need to redraw it.
 }
 
 @end

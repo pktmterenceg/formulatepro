@@ -7,6 +7,7 @@
 //
 
 #import "AppDelegate.h"
+#import "MyDocument.h"
 
 @implementation AppDelegate
 
@@ -60,6 +61,26 @@
     pb = [NSPasteboard generalPasteboard];
     [pb declareTypes:[NSArray arrayWithObject:NSTIFFPboardType] owner:nil];
     DLog(@"ok? %d\n", [pb setData:d forType:NSTIFFPboardType]);*/
+}
+
+- (IBAction)refreshAllDocumentViews:(id)sender
+{
+    //
+    [[[NSDocumentController sharedDocumentController] documents] makeObjectsPerformSelector:@selector(refreshPrefs)];
+}
+
+- (IBAction)saveFrontmostDocumentToPDF:(id)sender{
+    MyDocument *doc = (MyDocument *)[[NSDocumentController sharedDocumentController] currentDocument];
+    [doc printDirectlyToPDF: self];
+}
+
+- (NSInteger) documentCount{
+    return ([[[NSDocumentController sharedDocumentController] documents] count]);
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem{
+    //Note: does not filter based on menu item; possibly bad.
+    return ([[[NSDocumentController sharedDocumentController] documents] count] > 0);
 }
 
 @end

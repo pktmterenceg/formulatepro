@@ -3,6 +3,8 @@
 #import <Cocoa/Cocoa.h>
 #import <PDFKit/PDFKit.h>
 
+#define GRIDSIZE 15
+
 @class FPGraphic;
 @class MyDocument;
 
@@ -18,7 +20,8 @@
     BOOL _draws_shadow;
     BOOL _inQuickMove;
     BOOL _is_printing;
-
+	BOOL _has_gridOverlay;
+    
     NSMutableArray *_overlayGraphics;
     NSMutableSet *_selectedGraphics;
     FPGraphic *_editingGraphic;
@@ -26,6 +29,8 @@
     // For zooming
     IBOutlet NSScrollView *_scrollView;
 }
+
+- (void)initMemberVariables;
 
 - (void)setPDFDocument:(PDFDocument *)pdf_document;
 
@@ -68,6 +73,7 @@
 - (FPDocumentView *)printableCopy;
 - (NSRect)rectForPage:(int)page; // indexed from 1, not 0
 
+
 // opening and saving
 - (NSArray *)archivalOverlayGraphics;
 - (void)setOverlayGraphicsFromArray:(NSArray *)arr;
@@ -77,4 +83,7 @@
 
 // private
 - (NSAffineTransform *)transformForPage:(unsigned int)page;
+
+//refresh for grid overlay pref
+- (void) refreshPrefs;
 @end
